@@ -9,6 +9,7 @@
 #include <fstream>
 #include <vector>
 #include <imgui.h>
+#include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -56,6 +57,35 @@ namespace application {
 			glm::mat4 mvp;
 			glm::vec4 tint;
 		};
+
+		struct SceneState {
+			//1
+			int projection = 0;            
+			float fov_deg = 60.0f;
+			float ortho_half_height = 1.5f;
+
+			//2
+			glm::vec3 position = glm::vec3(0.0f);
+			glm::vec3 rotation_deg = glm::vec3(0.0f);
+			glm::vec3 scale = glm::vec3(1.0f);
+
+			//3
+			bool animate = true;
+			bool playing = true;
+			float speed = 1.0f;
+			float radius = 1.0f;
+			float vertical_amplitude = 0.5f;
+			int vertical_frequency = 2;
+			float spin_speed = 1.0f;
+
+			//4
+			glm::vec4 tint = glm::vec4(1.0f);
+		};
+
+		SceneState scene;
+		double animation_time = 0.0;
+		double last_time = 0.0;
+		bool show_demo = false;
 
 		VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 		VkPipeline pipeline = VK_NULL_HANDLE;
@@ -287,17 +317,98 @@ void shutdown() {
 }
 
 void update(double time) {
-	ImGui::ShowDemoWindow();
+	const float dt = float(time - last_time);
+	last_time = time;
+
+	ImGui::Begin("Cube controls");
+
+	if (ImGui::CollapsingHeader("Projection", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::RadioButton("Perspective", &scene.projection, 0);
+		ImGui::SameLine();
+		ImGui::RadioButton("Orthographic", &scene.projection, 1);
+		if (scene.projection == 0) {
+			ImGui::SliderFloat("FOV (deg)", &scene.fov_deg, 20.0f, 120.0f);
+		}
+		else {
+			ImGui::SliderFloat("Ortho half-height", &scene.ortho_half_height, 0.5f, 5.0f);
+		}
+	}
+
+	if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::DragFloat3("Position", &scene.position.x, 0.01f);
+		ImGui::SliderFloat3("Rotation (deg)", &scene.rotation_deg.x, -180.0f, 180.0f);
+		ImGui::DragFloat3("Scale", &scene.scale.x, 0.01f, 0.05f, 5.0f);
+	}
+
+	if (ImGui::CollapsingHeader("Animation", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::Checkbox("Enable trajectory", &scene.animate);
+		if (ImGui::Button(scene.playing ? "Pause" : "Play")) {
+			scene.playing = !scene.playing;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Reset time")) {
+			animation_time = 0.0;
+		}
+		ImGui::SliderFloat("Speed", &scene.speed, 0.0f, 5.0f);
+		ImGui::SliderFloat("Radius", &scene.radius, 0.0f, 3.0f);
+		ImGui::SliderFloat("Vertical amplitude", &scene.vertical_amplitude, 0.0f, 2.0f);
+		ImGui::SliderInt("Vertical frequency", &scene.vertical_frequency, 1, 6);
+		ImGui::SliderFloat("Spin speed", &scene.spin_speed, 0.0f, 5.0f);
+	}
+
+	if (ImGui::CollapsingHeader("Color", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::ColorEdit3("Tint", &scene.tint.x);
+	}
+
+	if (ImGui::Button("Reset all")) {
+		scene = SceneState();
+		animation_time = 0.0;
+	}
+	ImGui::Checkbox("Show ImGui demo", &show_demo);
+	ImGui::End();
+
+	if (show_demo) {
+		ImGui::ShowDemoWindow(&show_demo);
+	}
+
+	if (scene.animate && scene.playing) {
+		animation_time += double(dt) * double(scene.speed);
+	}
+	const float t = float(animation_time);
+
+	glm::vec3 offset(0.0f);
+	float spin = 0.0f;
+	if (scene.animate) {
+		offset = glm::vec3(scene.radius * std::cos(t),
+			scene.vertical_amplitude * std::sin(float(scene.vertical_frequency) * t),
+			scene.radius * std::sin(t));
+		spin = scene.spin_speed * t;
+	}
+
+	glm::mat4 model = glm::translate(glm::mat4(1.0f), scene.position + offset);
+	model = glm::rotate(model, glm::radians(scene.rotation_deg.z), glm::vec3(0.0f, 0.0f, 1.0f));
+	model = glm::rotate(model, glm::radians(scene.rotation_deg.y), glm::vec3(0.0f, 1.0f, 0.0f));
+	model = glm::rotate(model, glm::radians(scene.rotation_deg.x), glm::vec3(1.0f, 0.0f, 0.0f));
+	model = glm::rotate(model, spin, glm::vec3(0.5f, 1.0f, 0.0f));
+	model = glm::scale(model, scene.scale);
+
+	const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	const auto extent = graphics::internal::context.swapchain_extent;
 	const float aspect = float(extent.width) / float(std::max(extent.height, 1u));
 
-	const glm::mat4 model = glm::rotate(glm::mat4(1.0f), float(time), glm::vec3(0.5f, 1.0f, 0.0f));
-	const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+	glm::mat4 proj;
+	if (scene.projection == 0) {
+		proj = glm::perspective(glm::radians(scene.fov_deg), aspect, 0.1f, 100.0f);
+	}
+	else {
+		const float h = scene.ortho_half_height;
+		proj = glm::ortho(-h * aspect, h * aspect, -h, h, 0.1f, 100.0f);
+	}
 	proj[1][1] *= -1.0f;
 
 	push.mvp = proj * view * model;
+	push.tint = scene.tint;
 }
 void render(const graphics::internal::FrameData& fd) {
 	auto& context = graphics::internal::context;
