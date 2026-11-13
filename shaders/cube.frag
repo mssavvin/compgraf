@@ -22,14 +22,14 @@ layout(set = 1, binding = 0) uniform ModelUniforms {
 } object;
 
 struct PointLight {
-    vec4 position;   // xyz
-    vec4 color;      // rgb * intensity
+    vec4 position; 
+    vec4 color;      
 };
 
 struct SpotLight {
-    vec4 position;   // xyz
-    vec4 direction;  // xyz — куда светит, w = cos(внутренний угол)
-    vec4 color;      // rgb * intensity, w = cos(внешний угол)
+    vec4 position;  
+    vec4 direction; 
+    vec4 color;     
 };
 
 layout(std430, set = 0, binding = 1) readonly buffer PointLights {
@@ -40,8 +40,6 @@ layout(std430, set = 0, binding = 2) readonly buffer SpotLights {
     SpotLight spot_lights[];
 };
 
-// Модель Блинна-Фонга для одного источника.
-// L — единичный вектор от точки к источнику, radiance — уже с учётом затухания.
 vec3 blinnPhong(vec3 N, vec3 V, vec3 L, vec3 radiance) {
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
@@ -53,14 +51,11 @@ void main() {
     vec3 N = normalize(v_world_normal);
     vec3 V = normalize(scene.camera_pos.xyz - v_world_pos);
 
-    // Рассеянный свет
     vec3 color = scene.ambient.rgb * object.albedo.rgb;
 
-    // Направленный источник
     vec3 Ld = -normalize(scene.dir_direction.xyz);
     color += blinnPhong(N, V, Ld, scene.dir_color.rgb);
 
-    // Точечные источники: затухание по закону обратных квадратов
     for (int i = 0; i < scene.counts.x; ++i) {
         vec3 to_light = point_lights[i].position.xyz - v_world_pos;
         float dist2 = max(dot(to_light, to_light), 1e-4);
@@ -68,7 +63,6 @@ void main() {
         color += blinnPhong(N, V, L, point_lights[i].color.rgb / dist2);
     }
 
-    // Прожекторные источники: обратные квадраты + мягкий край конуса
     for (int i = 0; i < scene.counts.y; ++i) {
         SpotLight s = spot_lights[i];
         vec3 to_light = s.position.xyz - v_world_pos;

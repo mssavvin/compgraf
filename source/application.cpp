@@ -22,9 +22,6 @@ namespace application {
 			glm::vec3 normal;
 		};
 
-		// Нормали считаются процедурно: для каждой грани по её нормали строятся
-		// две касательные оси и четыре угла. У каждой грани свои 4 вершины,
-		// чтобы свет был плоским, а не сглаженным.
 		void generateCube(std::vector<Vertex>& vertices, std::vector<uint16_t>& indices) {
 			const glm::vec3 normals[6] = {
 				{ 1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
@@ -54,23 +51,22 @@ namespace application {
 		VkBuffer index_buffer = VK_NULL_HANDLE;
 		VmaAllocation index_allocation = VK_NULL_HANDLE;
 
-		constexpr uint32_t MAX_LIGHTS = 256; // ёмкость storage-буфера на CPU; в шейдере лимита нет
+		constexpr uint32_t MAX_LIGHTS = 256; 
 
-		// --- структуры для GPU (всё на vec4, чтобы не мучиться с выравниванием) ---
 		struct SceneUniforms {
 			glm::mat4  view_proj;
 			glm::vec4  camera_pos;
-			glm::vec4  ambient;        // rgb * intensity
-			glm::vec4  dir_direction;  // xyz: куда светит
-			glm::vec4  dir_color;      // rgb * intensity
-			glm::ivec4 counts;         // x: точечных, y: прожекторных
+			glm::vec4  ambient;        
+			glm::vec4  dir_direction;  
+			glm::vec4  dir_color;      
+			glm::ivec4 counts;         
 		};
 
 		struct ModelUniforms {
 			glm::mat4 model;
 			glm::mat4 normal_matrix;
 			glm::vec4 albedo;
-			glm::vec4 specular;        // rgb: цвет блика, w: коэффициент блика
+			glm::vec4 specular;        
 		};
 
 		struct PointLightGPU {
@@ -80,11 +76,10 @@ namespace application {
 
 		struct SpotLightGPU {
 			glm::vec4 position;
-			glm::vec4 direction;       // w = cos(внутренний угол)
-			glm::vec4 color;           // w = cos(внешний угол)
+			glm::vec4 direction;       
+			glm::vec4 color;           
 		};
 
-		// --- параметры, которые крутятся в ImGui ---
 		struct PointLightCPU {
 			glm::vec3 position{ 0.0f, 2.0f, 2.0f };
 			glm::vec3 color{ 1.0f, 1.0f, 1.0f };
@@ -101,9 +96,9 @@ namespace application {
 		};
 
 		struct LightingState {
-			// камера (FOV и тип проекции остаются в панели Projection)
+			// камера 
 			glm::vec3 camera_position{ 0.0f, 0.0f, 3.0f };
-			float yaw_deg = 0.0f;      // 0: смотрим вдоль -Z
+			float yaw_deg = 0.0f;     
 			float pitch_deg = 0.0f;
 			// рассеянный и направленный свет
 			glm::vec3 ambient_color{ 1.0f, 1.0f, 1.0f };
@@ -115,7 +110,7 @@ namespace application {
 			glm::vec3 albedo{ 0.8f, 0.3f, 0.2f };
 			glm::vec3 specular_color{ 1.0f, 1.0f, 1.0f };
 			float shininess = 32.0f;
-			// массивы источников
+		
 			std::vector<PointLightCPU> point_lights;
 			std::vector<SpotLightCPU> spot_lights;
 		};
@@ -158,7 +153,6 @@ namespace application {
 
 		LightingState lighting;
 
-		// CPU-копии: считаются в update(), копируются в GPU в render()
 		SceneUniforms scene_uniforms{};
 		ModelUniforms model_uniforms{};
 		std::vector<PointLightGPU> point_lights_gpu;
@@ -373,7 +367,6 @@ namespace application {
 		bool createDescriptors() {
 			auto& context = graphics::internal::context;
 
-			// --- set 0: сцена (uniform + 2 storage) ---
 			const VkShaderStageFlags vf = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 			const VkDescriptorSetLayoutBinding scene_bindings[] = {
 				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = vf },
@@ -391,7 +384,6 @@ namespace application {
 				return false;
 			}
 
-			// --- set 1: модель (uniform) ---
 			const VkDescriptorSetLayoutBinding model_binding = {
 				.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = vf,
 			};
@@ -406,7 +398,6 @@ namespace application {
 				return false;
 			}
 
-			// --- пул: 2 набора, uniform: 2, storage: 2 ---
 			const VkDescriptorPoolSize pool_sizes[] = {
 				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 2 },
 				{.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 2 },
@@ -423,7 +414,6 @@ namespace application {
 				return false;
 			}
 
-			// --- выделяем оба набора за раз ---
 			const VkDescriptorSetLayout layouts[] = { scene_set_layout, model_set_layout };
 			const VkDescriptorSetAllocateInfo set_alloc_info = {
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -439,7 +429,6 @@ namespace application {
 			scene_set = sets[0];
 			model_set = sets[1];
 
-			// --- привязываем буферы ---
 			const VkDescriptorBufferInfo scene_info = { scene_ubo.buffer, 0, sizeof(SceneUniforms) };
 			const VkDescriptorBufferInfo point_info = { point_ssbo.buffer, 0, sizeof(PointLightGPU) * MAX_LIGHTS };
 			const VkDescriptorBufferInfo spot_info = { spot_ssbo.buffer,  0, sizeof(SpotLightGPU) * MAX_LIGHTS };
@@ -520,7 +509,7 @@ namespace application {
 						ImGui::DragFloat("Intensity", &l.intensity, 0.1f, 0.0f, 1000.0f);
 						ImGui::SliderFloat("Inner angle", &l.inner_deg, 0.0f, 89.0f);
 						ImGui::SliderFloat("Outer angle", &l.outer_deg, 0.0f, 90.0f);
-						if (l.inner_deg > l.outer_deg) l.inner_deg = l.outer_deg; // внутренний <= внешнего
+						if (l.inner_deg > l.outer_deg) l.inner_deg = l.outer_deg;
 						if (ImGui::Button("Remove")) remove_idx = i;
 						ImGui::TreePop();
 					}
@@ -556,7 +545,7 @@ namespace application {
 			return false;
 		}
 
-		// storage-буферы фиксированной ёмкости, заполняются нулями; в шейдере лимита нет
+		
 		const std::vector<PointLightGPU> zero_points(MAX_LIGHTS);
 		const std::vector<SpotLightGPU> zero_spots(MAX_LIGHTS);
 		if (!createBuffer(sizeof(PointLightGPU) * MAX_LIGHTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
